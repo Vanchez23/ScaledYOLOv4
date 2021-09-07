@@ -41,6 +41,7 @@ def train(hyp, opt, device, tb_writer=None):
         opt.epochs, opt.batch_size, opt.total_batch_size, opt.weights, opt.global_rank
     
     if os.path.exists(opt.wandb_cfg):
+        wandb_writer=True
         with open(opt.wandb_cfg) as f:
             wandb_cfg = yaml.safe_load(f)
         wandb_run = wandb.init(project=wandb_cfg['project'],
@@ -51,6 +52,7 @@ def train(hyp, opt, device, tb_writer=None):
                    dir=wandb_cfg['dir'],
                    sync_tensorboard=True)
     else:
+        wandb_writer=False
         print(f'{opt.wandb_cfg} doesn\'t exists')
         
     # TODO: Use DDP logging. Only the first process is allowed to log.
@@ -341,7 +343,7 @@ def train(hyp, opt, device, tb_writer=None):
                 for x, tag in zip(list(mloss[:-1]) + list(results), tags):
                     tb_writer.add_scalar(tag, x, epoch)
                     log_dict[tag] = x
-                if wandb_writer is not None:
+                if wandb_writer:
                     wandb_run.log(log_dict)
 
             # Update best mAP
