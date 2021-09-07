@@ -26,6 +26,7 @@ from utils.general import (
     get_latest_run, check_git_status, check_file, increment_dir, print_mutation, plot_evolution)
 from utils.google_utils import attempt_download
 from utils.torch_utils import init_seeds, ModelEMA, select_device, intersect_dicts
+import wandb
 
 
 def train(hyp, opt, device, tb_writer=None):
@@ -38,7 +39,20 @@ def train(hyp, opt, device, tb_writer=None):
     results_file = str(log_dir / 'results.txt')
     epochs, batch_size, total_batch_size, weights, rank = \
         opt.epochs, opt.batch_size, opt.total_batch_size, opt.weights, opt.global_rank
-
+    
+    if os.path.exists(opt.wandb_cfg):
+        with open(opt.wandb_cfg) as f:
+            wandb_cfg = yaml.safe_load(f)
+        wandb_run = wandb.init(project=wandb_cfg['project'],
+                   save_code=wandb_cfg['save_code'],
+                   tags=wandb_cfg['tags'],
+                   notes=wandb_cfg['notes'],
+                   name=wandb_cfg['name'],
+                   dir=wandb_cfg['dir'],
+                   sync_tensorboard=True)
+    else:
+        print(f'{opt.wandb_cfg} doesn\'t exists')
+        
     # TODO: Use DDP logging. Only the first process is allowed to log.
     # Save run settings
     with open(log_dir / 'hyp.yaml', 'w') as f:
@@ -323,8 +337,12 @@ def train(hyp, opt, device, tb_writer=None):
                 tags = ['train/giou_loss', 'train/obj_loss', 'train/cls_loss',
                         'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
                         'val/giou_loss', 'val/obj_loss', 'val/cls_loss']
+                log_dict = {}
                 for x, tag in zip(list(mloss[:-1]) + list(results), tags):
                     tb_writer.add_scalar(tag, x, epoch)
+                    log_dict[tag] = x
+                if wandb_writer is not None:
+                    wandb_run.log(log_dict)
 
             # Update best mAP
             fi = fitness(np.array(results).reshape(1, -1))  # fitness_i = weighted combination of [P, R, mAP, F1]
@@ -397,6 +415,8 @@ if __name__ == '__main__':
     parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
     parser.add_argument('--local_rank', type=int, default=-1, help='DDP parameter, do not modify')
     parser.add_argument('--logdir', type=str, default='runs/', help='logging directory')
+    parser.add_argument('--wandb-cfg', type=str, default='wandb.yaml', help='wandb.yaml path')
+    parser.add_argument('--wandb-writer', action='store_true', help='use wandb writer')
     opt = parser.parse_args()
 
     # Resume
